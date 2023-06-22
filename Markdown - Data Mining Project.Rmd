@@ -1,0 +1,777 @@
+---
+title: "Data Mining Project Markdown"
+author: "Madathil Geetanjali Menon"
+date: "2023-05-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install.packages("readxl")
+library(readxl)
+library(tidyverse) # for data manipulation and visualization
+library(corrplot) # for correlation plots
+library(car) # for diagnostic plots in linear regression
+library(caret)
+library(dplyr)
+library(ggplot2)
+library(gganimate)
+library(maps)
+library(tree)
+library(knitr)
+library(xgboost)
+library(gbm)
+library(factoextra) 
+library(knitr)
+library(ggplot2)
+```
+
+```{r}
+
+data=read_excel('/Users/geetanjalimenon/Downloads/Cleaned_Data_Mining.xlsx')
+
+data$Country <- as.factor(data$Country)
+data$Crop <- as.factor(data$Crop)
+##EDA AND VIZUALIZATION
+str(data)
+##Exploratory Analysis
+summary(data)
+
+# Count NA values
+sum(is.na(data))
+
+
+
+###Vizualization
+
+# Determine the color palette based on yield order
+crop_order <- crop_year_summary_test %>%
+  group_by(Crop) %>%
+  summarize(mean_yield = mean(mean_yield)) %>%
+  arrange(mean_yield) %>%
+  pull(Crop)
+
+num_crops <- length(crop_order)
+green_shades <- colorRampPalette(c("#FF0000", "#00FF00"))(num_crops)
+
+# Create the initial plot with the custom color palette
+plot <- ggplot(crop_year_summary_test, aes(x = Year, y = mean_yield, color = factor(Crop, levels = crop_order))) +
+  geom_line() +
+  labs(x = "Year", y = "Mean Yield", title = "Yield Trend for Crops") +
+  scale_x_continuous(breaks = seq(floor(min(crop_year_summary_test$Year)), ceiling(max(crop_year_summary_test$Year))), labels = seq(floor(min(crop_year_summary_test$Year)), ceiling(max(crop_year_summary_test$Year)))) +
+  theme_minimal() +
+  scale_color_manual(values = green_shades) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# Create the animated plot with the custom color palette
+animated_plot <- plot +
+  transition_reveal(Year) +
+  enter_fade() +
+  exit_fade()
+
+animated_plot
+
+
+country_crop_summary <- train_df %>%
+  group_by(Country, Crop) %>%
+  summarize(mean_yield = mean(Yield))
+
+# Filter the data for Maize crop
+maize_mean_yield <- country_crop_summary %>%
+  filter(Crop == "Maize")
+# Filter the data for Wheat crop
+wheat_mean_yield <- country_crop_summary %>%
+  filter(Crop == "Wheat")
+# Filter the data for Cassava crop
+cassava_mean_yield <- country_crop_summary %>%
+  filter(Crop == "Cassava")
+
+crop_data_maize <- maize_mean_yield
+crop_data_wheat <- wheat_mean_yield
+crop_data_cassava <- cassava_mean_yield
+
+
+# Download the world map data
+world_map <- map_data("world")
+
+##Maize
+
+# Merge the crop data with the world map data based on country names
+map_data_maize <- merge(world_map, crop_data_maize, by.x = "region", by.y = "Country", all.x = TRUE)
+# Create the map plot
+# Define a custom color palette
+custom_palette <- c("#FFEDA0", "#FED976", "#FEB24C", "#FD8D3C", "#FC4E2A", "#E31A1C", "#BD0026", "#800026")
+
+# Create the map plot
+map_plot_maize <- ggplot(map_data_maize, aes(x = long, y = lat, group = group, fill = Crop)) +
+  geom_polygon() +
+  labs(title = "Yield Differences by Maize") +
+  scale_fill_manual(values = custom_palette, guide = guide_legend(reverse = TRUE)) +
+  theme_void()
+
+# Display the map plot
+print(map_plot_maize)
+
+##Wheat
+
+# Merge the crop data with the world map data based on country names
+map_data_wheat <- merge(world_map, crop_data_wheat, by.x = "region", by.y = "Country", all.x = TRUE)
+# Create the map plot
+# Define a custom color palette
+custom_palette <- c("#FFD4C1", "#FFDFC2", "#FFEAC3", "#FFF5C5", "#FFFAC6", "#F4FFC8", "#E9FFC9", "#DEFFCB")
+
+# Create the map plot
+map_plot_wheat <- ggplot(map_data_wheat, aes(x = long, y = lat, group = group, fill = Crop)) +
+  geom_polygon() +
+  labs(title = "Yield Differences by Wheat") +
+  scale_fill_manual(values = custom_palette, guide = guide_legend(reverse = TRUE)) +
+  theme_void()
+
+# Display the map plot
+print(map_plot_wheat)
+
+##Cassava
+map_data_cassava <- merge(world_map, crop_data_cassava, by.x = "region", by.y = "Country", all.x = TRUE)
+# Create the map plot
+# Define a custom color palette
+custom_palette <- c("#B3E2CD", "#C9DFC5", "#DDDCCF", "#E8D8CE", "#F0D0D0", "#FAC8D6", "#FFC1DD", "#FFBBE4")
+
+# Create the map plot
+map_plot_cassava <- ggplot(map_data_cassava, aes(x = long, y = lat, group = group, fill = Crop)) +
+  geom_polygon() +
+  labs(title = "Yield Differences by Cassava") +
+  scale_fill_manual(values = custom_palette, guide = guide_legend(reverse = TRUE)) +
+  theme_void()
+
+# Display the map plot
+print(map_plot_cassava)
+
+
+
+```
+```{r}
+
+##Linear Regression Code
+
+# Fit a linear regression model
+
+## 60% of the sample size
+
+train_df <- data[data$Year < 2004, ]
+(train_df)
+test_df <- data[data$Year >= 2004, ]
+nrow(test_df)
+
+##to remove highly co-linear variables
+# Calculate the correlation matrix
+
+
+corr_matrix <- cor(train_df[, -(1:3)])
+print(corr_matrix)
+corrplot(corr_matrix, method = "circle")
+
+# Find variables with high correlation (threshold set to 0.7)
+
+high_corr_vars <- findCorrelation(corr_matrix, cutoff = 0.7)
+high_corr_vars
+train_df[, -high_corr_vars]
+train_df <- train_df[, -high_corr_vars]
+test_df[, -high_corr_vars]
+test_df <- test_df[, -high_corr_vars]
+# Check for missing values in the training and test datasets
+sum(is.na(train_df))
+sum(is.na(test_df))
+
+# Get unique countries in test_df
+unique_countries_test <- unique(test_df$Country)
+
+# Get unique countries in test_df that are not in train_df
+unique_countries_not_in_train <- setdiff(unique_countries_test, unique(train_df$Country))
+
+# Print the unique countries not in train_df
+print(unique_countries_not_in_train)
+test_df <- test_df[!(test_df$Country %in% unique_countries_not_in_train), ]
+##Surpress area variable (do not show)
+linear_reg_model <- lm(Yield ~average_rain_fall_mm_per_year+avg_temp+Crop+Country+Year+phosphate+potassium+nitrogen, data = train_df)
+summary(linear_reg_model)
+
+##training RMSE
+e_train <-linear_reg_model$residuals
+(AE_train <- mean(e_train))
+(RMSE_train <- sqrt(mean(e_train^2)))
+
+
+# Predict using the updated model
+predicted <- predict(linear_reg_model, newdata = test_df, na.action = na.pass)
+
+e_test <- (test_df$Yield - predicted)
+(AE_test <- mean(e_test,na.rm=T))
+(RMSE_test <- sqrt(mean(e_test^2,na.rm=T)))
+
+Dataset <- c("Training", "Test")
+x1 <- RMSE_train
+x2 <- RMSE_test
+RMSE <- c(x1,x2)
+X_V <- data.frame(Dataset, RMSE)
+kable(X_V)
+
+
+```
+```{r}
+df=read_excel("/Users/geetanjalimenon/Downloads/Cleaned_Data_Mining.xlsx")
+
+
+#####GRADIENT BOOSTING
+set.seed(123)
+gbm_crop=gbm(Yield~.,data=train_data,distribution="gaussian",n.trees=5000,interaction.depth=4,shrinkage = 0.1)
+summary(gbm_crop)
+#par(mfrow=c(1,2))
+#plot(gbm_crop,i="rm")
+#plot(gbm_crop,i="lstat")
+yhat_crop=predict(gbm_crop,newdata=test_data,distribution="gaussian",n.trees=5000,interaction.depth=4,shrinkage = 0.1)
+
+
+# Calculate the root-mean-square error (RMSE) on test_data
+rmse_test_gbm <- sqrt(mean((yhat_crop - test_data$Yield)^2))
+rmse_test_gbm #
+
+
+# Make predictions on the train_data
+yhat_train_crop <- predict(gbm_crop, newdata = train_data, distribution="gaussian",n.trees=1000,interaction.depth=4)
+
+# Calculate the root-mean-square error (RMSE) on train_data
+rmse_train_gbm <- sqrt(mean((yhat_train_crop - train_data$Yield)^2))
+rmse_train_gbm 
+
+
+###Visualization
+library(ggplot2)
+
+# Create a data frame with predicted and actual yield values
+plot_data <- data.frame(Actual = test_data$Yield, Predicted = yhat_crop)
+
+# Create a scatter plot
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  xlab("Actual Yield") +
+  ylab("Predicted Yield") +
+  ggtitle("Scatter Plot: Predicted vs. Actual Yield")
+
+
+# Split the data into training and testing sets
+set.seed(123)
+train_data <- df[df$Year < 2004, ]
+test_data <- df[df$Year >= 2004, ]
+
+# Get unique countries in test_data
+unique_countries_test <- unique(test_data$Country)
+
+# Get unique countries in test_df that are not in train_data
+unique_countries_not_in_train <- setdiff(unique_countries_test, unique(train_data$Country))
+
+# Print the unique countries not in train_data
+print(unique_countries_not_in_train)
+test_data <- test_data[!(test_data$Country %in% unique_countries_not_in_train), ]
+
+# Define the variables for the model
+predictors <- c("Country",	"Crop"	,	"Year"	,"average_rain_fall_mm_per_year"
+                ,"pesticides_tonnes",	"biomass_burned",	"nitrogen",	"phosphate"	,"potassium",	"avg_temp"
+)
+
+response <- "Yield"
+
+# Remove countries from train_data
+train_data <- subset(train_data, !(Country %in% c("Eritrea", "Montenegro", "Sudan")))
+
+# Remove countries from test_data
+test_data <- subset(test_data, !(Country %in% c("Eritrea", "Montenegro", "Sudan")))
+
+
+# Convert categorical variables to factors
+train_data$Country <- as.factor(train_data$Country)
+train_data$Crop <- as.factor(train_data$Crop)
+test_data$Country <- as.factor(test_data$Country)
+test_data$Crop <- as.factor(test_data$Crop)
+
+
+# Create the train_dmatrix object
+train_dmatrix <- xgb.DMatrix(data = model.matrix(~.-1, data = train_data[, predictors]), label = train_data$`Yield`)
+test_dmatrix <- xgb.DMatrix(data = model.matrix(~.-1, data = test_data[, predictors]), label = test_data$`Yield`)
+
+
+
+# Set the XGBoost parameters
+params <- list(
+  objective = "reg:squarederror",
+  eval_metric = "rmse",
+  max_depth = 3,
+  eta = 0.1
+)
+
+# Train the XGBoost model
+model <- xgb.train(params = params, data = train_dmatrix, nrounds = 100)
+model
+
+
+# Make predictions on the testing set
+predictions <- predict(model, newdata = test_dmatrix)
+
+# Calculate the root-mean-square error (RMSE)
+rmse_test <- sqrt(mean((predictions - test_data$`Yield`)^2))
+
+# Display the RMSE
+print(rmse_test)
+
+###checking if there are negative values in predicted output##
+if (any(predictions < 0)) {
+  cat("There are negative values in the predicted output.")
+} else {
+  cat("All predicted values are non-negative.")
+}
+
+#Predictions on training data
+train_pred <- predict(model, train_dmatrix)
+
+# calculate the training RMSE
+rmse_train <- sqrt(mean((train_data$`Yield` - train_pred)^2))
+
+print(rmse_train) 
+
+
+
+
+
+
+
+```
+```{r}
+###CLUSTERING
+
+#considering maize alone
+df <- read_excel('/Users/geetanjalimenon/Desktop/Maize.xlsx')
+summary(df)
+# we made a copy of the yield, so we will use later
+Yield = df$Yield
+#scaled the data except Country, Crop, and Yield (dependent variable)
+dfsc <- scale(df[,-c(1,2,9)])
+#set the seed 
+set.seed(12345)
+#Performing K-Means clustering of the data with K = 4 using all of the data.
+K = 4
+km.out=kmeans(dfsc,K,nstart=20)
+km.out
+df$Cluster <- km.out$cluster
+
+#To retrieve the within cluster sum of squares of the clusters
+km.out$withinss
+
+#Next to determine the optimal number of K to use
+fviz_nbclust(dfsc, kmeans, k.max=20, method = "wss")
+#K = 4 seems optimal (same value we used earlier)
+#Until K=4 the Total Within Sum of Squares graph is steep. 
+#After that, it flattens out, providing an elbow at K=4.
+
+# Visualize k-means clusters in a finer way
+fviz_cluster(km.out, data = dfsc, geom = "point", stand = FALSE, ellipse.type = "norm")
+
+#to store the row names as country names
+row.names(df) <- df$Country
+#To see the countries in each cluster?
+df2 = data.frame(row.names(df))
+df2$cluster = km.out$cluster
+df2$country <- df2$row.names.df.
+Clusters=list(df2[df2$cluster==1,"country"],
+              df2[df2$cluster==2,"country"],
+              df2[df2$cluster==3,"country"],
+              df2[df2$cluster==4,"country"])
+Clusters
+
+#To compute the average crop yield in each cluster
+df = data.frame(Yield, km.out$cluster)
+
+cluster1MaizeYield <- ifelse(df$km.out.cluster == 1, df$Yield,0)
+mean(cluster1MaizeYield)
+cluster2MaizeYield <- ifelse(df$km.out.cluster == 2, df$Yield,0)
+mean(cluster2MaizeYield)
+cluster3MaizeYield <- ifelse(df$km.out.cluster == 3, df$Yield,0)
+mean(cluster3MaizeYield)
+cluster4MaizeYield <- ifelse(df$km.out.cluster == 4, df$Yield,0)
+mean(cluster4MaizeYield)
+
+#From the output, we see that cluster 3 has the highest maize yield with an average value of 21308.21
+
+#Hierarchical Clusters for Maize
+df <- read_excel('/Users/geetanjalimenon/Desktop/Maize.xlsx')
+
+#scaled the data except Country and Crop
+dfsc <- scale(df[,-c(1,2)])
+
+# If you assign row names, these will be used as labels at the end of 
+row.names(dfsc) <- df$Country
+
+#Coming up with dendogram for different distance metrics
+hc.complete = hclust(dist(dfsc),method="complete")
+plot(hc.complete,main="Complete Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.complete, k=4)
+(groups <- sort(cutree(hc.complete, k=4)))
+#
+hc.average = hclust(dist(dfsc),method="average")
+plot(hc.average,main="Average Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.average, k=4)
+(groups <- sort(cutree(hc.average, k=4)))
+#
+hc.single = hclust(dist(dfsc),method="single")
+plot(hc.single,main="Single Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.single, k=4)
+(groups <- sort(cutree(hc.single, k=4)))
+#
+hc.centroid = hclust(dist(dfsc),method="centroid")
+plot(hc.centroid,main="Average Group Linkage",hang = -1, xlab="",sub="",cex=0.9)
+rect.hclust(hc.centroid, k=4)
+(groups <- sort(cutree(hc.centroid, k=4)))
+
+#Considering Potato alone
+df <- read_excel('/Users/geetanjalimenon/Desktop/Potato.xlsx')
+summary(df)
+# we made a copy of the yield, so we will use later
+Yield = df$Yield
+#scaled the data except Country, Crop, and Yield (dependent variable)
+dfsc <- scale(df[,-c(1,2,9)])
+#set the seed 
+set.seed(12345)
+#Performing K-Means clustering of the data with K = 4 using all of the data.
+K = 4
+km.out=kmeans(dfsc,K,nstart=20)
+km.out
+df$Cluster <- km.out$cluster
+
+#To retrieve the within cluster sum of squares of the clusters
+km.out$withinss
+
+#Next to determine the optimal number of K to use
+fviz_nbclust(dfsc, kmeans, k.max=20, method = "wss")
+#K = 4 seems optimal (same value we used earlier)
+#Until K=4 the Total Within Sum of Squares graph is steep. 
+#After that, it flattens out, providing an elbow at K=4.
+
+# Visualize k-means clusters in a finer way
+fviz_cluster(km.out, data = dfsc, geom = "point", stand = FALSE, ellipse.type = "norm")
+
+#to store the row names as country names
+row.names(df) <- df$Country
+#To see the countries in each cluster?
+df2 = data.frame(row.names(df))
+df2$cluster = km.out$cluster
+df2$country <- df2$row.names.df.
+Clusters=list(df2[df2$cluster==1,"country"],
+              df2[df2$cluster==2,"country"],
+              df2[df2$cluster==3,"country"],
+              df2[df2$cluster==4,"country"])
+Clusters
+
+#To compute the average crop yield in each cluster
+df = data.frame(Yield, km.out$cluster)
+
+cluster1PotatoYield <- ifelse(df$km.out.cluster == 1, df$Yield,0)
+mean(cluster1PotatoYield)
+cluster2PotatoYield <- ifelse(df$km.out.cluster == 2, df$Yield,0)
+mean(cluster2PotatoYield)
+cluster3PotatoYield <- ifelse(df$km.out.cluster == 3, df$Yield,0)
+mean(cluster3PotatoYield)
+cluster4PotatoYield <- ifelse(df$km.out.cluster == 4, df$Yield,0)
+mean(cluster4PotatoYield)
+
+#From the output, we see that cluster 3 has the highest Potato yield with an average value of 93151.62
+
+#Hierarchical Clusters for Potato
+df <- read_excel('/Users/geetanjalimenon/Desktop/Potato.xlsx')
+
+#scaled the data except Country and Crop
+dfsc <- scale(df[,-c(1,2)])
+
+# If you assign row names, these will be used as labels at the end of 
+row.names(dfsc) <- df$Country
+
+#Coming up with dendogram for different distance metrics
+hc.complete = hclust(dist(dfsc),method="complete")
+plot(hc.complete,main="Complete Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.complete, k=4)
+(groups <- sort(cutree(hc.complete, k=4)))
+#
+hc.average = hclust(dist(dfsc),method="average")
+plot(hc.average,main="Average Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.average, k=4)
+(groups <- sort(cutree(hc.average, k=4)))
+#
+hc.single = hclust(dist(dfsc),method="single")
+plot(hc.single,main="Single Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.single, k=4)
+(groups <- sort(cutree(hc.single, k=4)))
+#
+hc.centroid = hclust(dist(dfsc),method="centroid")
+plot(hc.centroid,main="Average Group Linkage",hang = -1, xlab="",sub="",cex=0.9)
+rect.hclust(hc.centroid, k=4)
+(groups <- sort(cutree(hc.centroid, k=4)))
+#
+
+df <- read_excel('/Users/geetanjalimenon/Desktop/Wheat.xlsx')
+summary(df)
+# we made a copy of the yield, so we will use later
+Yield = df$Yield
+#scaled the data except Country, Crop, and Yield (dependent variable)
+dfsc <- scale(df[,-c(1,2,9)])
+#set the seed 
+set.seed(12345)
+#Performing K-Means clustering of the data with K = 4 using all of the data.
+K = 4
+km.out=kmeans(dfsc,K,nstart=20)
+km.out
+df$Cluster <- km.out$cluster
+
+#To retrieve the within cluster sum of squares of the clusters
+km.out$withinss
+
+#Next to determine the optimal number of K to use
+fviz_nbclust(dfsc, kmeans, k.max=20, method = "wss")
+#K = 4 seems optimal (same value we used earlier)
+#Until K=4 the Total Within Sum of Squares graph is steep. 
+#After that, it flattens out, providing an elbow at K=4.
+
+# Visualize k-means clusters in a finer way
+fviz_cluster(km.out, data = dfsc, geom = "point", stand = FALSE, ellipse.type = "norm")
+
+#to store the row names as country names
+row.names(df) <- df$Country
+#To see the countries in each cluster?
+df2 = data.frame(row.names(df))
+df2$cluster = km.out$cluster
+df2$country <- df2$row.names.df.
+Clusters=list(df2[df2$cluster==1,"country"],
+              df2[df2$cluster==2,"country"],
+              df2[df2$cluster==3,"country"],
+              df2[df2$cluster==4,"country"])
+Clusters
+
+#To compute the average crop yield in each cluster
+df = data.frame(Yield, km.out$cluster)
+
+cluster1WheatYield <- ifelse(df$km.out.cluster == 1, df$Yield,0)
+mean(cluster1WheatYield)
+cluster2WheatYield <- ifelse(df$km.out.cluster == 2, df$Yield,0)
+mean(cluster2WheatYield)
+cluster3WheatYield <- ifelse(df$km.out.cluster == 3, df$Yield,0)
+mean(cluster3WheatYield)
+cluster4WheatYield <- ifelse(df$km.out.cluster == 4, df$Yield,0)
+mean(cluster4WheatYield)
+
+#From the output, we see that cluster 3 has the highest Wheat yield with an average value of 16848.52
+#Hierarchical Clusters for Wheat
+df <- read_excel('/Users/geetanjalimenon/Desktop/Wheat.xlsx')
+
+#scaled the data except Country and Crop
+dfsc <- scale(df[,-c(1,2)])
+
+# If you assign row names, these will be used as labels at the end of 
+row.names(dfsc) <- df$Country
+
+#Coming up with dendogram for different distance metrics
+hc.complete = hclust(dist(dfsc),method="complete")
+plot(hc.complete,main="Complete Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.complete, k=4)
+(groups <- sort(cutree(hc.complete, k=4)))
+#
+hc.average = hclust(dist(dfsc),method="average")
+plot(hc.average,main="Average Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.average, k=4)
+(groups <- sort(cutree(hc.average, k=4)))
+#
+hc.single = hclust(dist(dfsc),method="single")
+plot(hc.single,main="Single Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.single, k=4)
+(groups <- sort(cutree(hc.single, k=4)))
+#
+hc.centroid = hclust(dist(dfsc),method="centroid")
+plot(hc.centroid,main="Average Group Linkage",hang = -1, xlab="",sub="",cex=0.9)
+rect.hclust(hc.centroid, k=4)
+(groups <- sort(cutree(hc.centroid, k=4)))
+
+
+#considering Cassava alone
+df <- read_excel('/Users/geetanjalimenon/Desktop/Cassava.xlsx')
+summary(df)
+# we made a copy of the yield, so we will use later
+Yield = df$Yield
+#scaled the data except Country, Crop, and Yield (dependent variable)
+dfsc <- scale(df[,-c(1,2,9)])
+#set the seed 
+set.seed(12345)
+#Performing K-Means clustering of the data with K = 4 using all of the data.
+K = 4
+km.out=kmeans(dfsc,K,nstart=20)
+km.out
+df$Cluster <- km.out$cluster
+
+#To retrieve the within cluster sum of squares of the clusters
+km.out$withinss
+
+#Next to determine the optimal number of K to use
+
+fviz_nbclust(dfsc, kmeans, k.max=20, method = "wss")
+#K = 4 seems optimal (same value we used earlier)
+#Until K=4 the Total Within Sum of Squares graph is steep. 
+#After that, it flattens out, providing an elbow at K=4.
+
+# Visualize k-means clusters in a finer way
+fviz_cluster(km.out, data = dfsc, geom = "point", stand = FALSE, ellipse.type = "norm")
+
+#to store the row names as country names
+row.names(df) <- df$Country
+#To see the countries in each cluster?
+df2 = data.frame(row.names(df))
+df2$cluster = km.out$cluster
+df2$country <- df2$row.names.df.
+Clusters=list(df2[df2$cluster==1,"country"],
+              df2[df2$cluster==2,"country"],
+              df2[df2$cluster==3,"country"],
+              df2[df2$cluster==4,"country"])
+Clusters
+
+#To compute the average crop yield in each cluster
+df = data.frame(Yield, km.out$cluster)
+
+cluster1CassavaYield <- ifelse(df$km.out.cluster == 1, df$Yield,0)
+mean(cluster1CassavaYield)
+cluster2CassavaYield <- ifelse(df$km.out.cluster == 2, df$Yield,0)
+mean(cluster2CassavaYield)
+cluster3CassavaYield <- ifelse(df$km.out.cluster == 3, df$Yield,0)
+mean(cluster3CassavaYield)
+cluster4CassavaYield <- ifelse(df$km.out.cluster == 4, df$Yield,0)
+mean(cluster4CassavaYield)
+
+#From the output, we see that cluster 1 has the highest Cassava yield with an average value of 35816.37
+#Hierarchical Clusters for Cassava
+df <- read_excel('/Users/geetanjalimenon/Desktop/Cassava.xlsx')
+
+#scaled the data except Country and Crop
+dfsc <- scale(df[,-c(1,2)])
+
+# If you assign row names, these will be used as labels at the end of 
+row.names(dfsc) <- df$Country
+
+#Coming up with dendogram for different distance metrics
+hc.complete = hclust(dist(dfsc),method="complete")
+plot(hc.complete,main="Complete Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.complete, k=4)
+(groups <- sort(cutree(hc.complete, k=4)))
+#
+hc.average = hclust(dist(dfsc),method="average")
+plot(hc.average,main="Average Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.average, k=4)
+(groups <- sort(cutree(hc.average, k=4)))
+#
+hc.single = hclust(dist(dfsc),method="single")
+plot(hc.single,main="Single Linkage",xlab="",hang = -1, sub="",cex=0.9)
+rect.hclust(hc.single, k=4)
+(groups <- sort(cutree(hc.single, k=4)))
+#
+hc.centroid = hclust(dist(dfsc),method="centroid")
+plot(hc.centroid,main="Average Group Linkage",hang = -1, xlab="",sub="",cex=0.9)
+rect.hclust(hc.centroid, k=4)
+(groups <- sort(cutree(hc.centroid, k=4)))
+#
+```
+```{r}
+
+## Regression Tree
+
+### Built a Regression Tree model to predict the Yield of each crop.
+
+# Read the crop Yield data in as a data frame
+df <- read_excel("/Users/geetanjalimenon/Downloads/Cleaned_Data_Mining.xlsx")
+
+### There is no need to make any transformations on the explanatory variables because decision trees can handle outliers and skewness in explanatory variables
+
+# Remove the categorical variables (Area and Item) and then create train and test data sets
+set.seed(123)
+df <- na.omit(df)
+train_df <- df[df$Year < 2004,]
+test_df <- df[df$Year >= 2004,]
+
+# Create an unpruned regression tree
+tree.reg=tree(Yield~.,train_df)
+summary(tree.reg)
+plot(tree.reg)
+title(main = "The Unpruned Tree", font.main= 2)
+text(tree.reg,pretty=0, cex =.80, pos = 3, offset = 0.005)
+
+### Calculate te training RMSE
+
+# Create predictions using the training data and calculate the RMSE
+yhat=predict(tree.reg)
+MSE <- mean((yhat-train_df$Yield)^2)
+trainRMSE <- sqrt(MSE)
+noquote(paste("The training RMSE is", round(trainRMSE,4)))
+
+
+### The test RMSE of the unpruned tree
+
+# Create predictions using the test data and calculate the RMSE
+yhat=predict(tree.reg, test_df)
+MSE <- mean((yhat-test_df$Yield)^2)
+testRMSE <- sqrt(MSE)
+noquote(paste("The test RMSE is", round(testRMSE,4)))
+
+
+### Image of the best pruned tree
+
+set.seed(123)
+cv.reg=cv.tree(tree.reg)
+plot(cv.reg$size,cv.reg$dev,type='b', col="blue", ann=FALSE)
+z <- which.min(cv.reg$dev)
+points(cv.reg$size[z],min(cv.reg$dev),col="red",cex=2,pch=20)
+title(main = "Size vs. Deviance", sub = paste("The best pruned tree has a k of",cv.reg$size[z]), xlab="Size", ylab="Deviance", cex.sub = 0.70, font.main= 2)
+
+
+prune.reg=prune.tree(tree.reg,best=cv.reg$size[z])
+plot(prune.reg)
+title(main = "The Best Pruned Tree", sub = paste("The best pruned tree with a k of",cv.reg$size[z]), cex.sub = 0.70, font.main= 2)
+text(prune.reg,pretty=0, cex =.80, pos = 3, offset = 0.005)
+
+
+### Test RMSE of the best pruned tree
+
+yhat=predict(prune.reg, test_df)
+MSE <- mean((yhat-test_df$Yield)^2)
+ptestRMSE <- sqrt(MSE)
+noquote(paste("The test RMSE of the best pruned tree is", round(ptestRMSE, 4)))
+
+
+### If you use this tree to determine how much crop Yield farmers produce in the test data set based on the rule that crops are bought from individuals with predicted Yield\>0. The total crop Yield would be:
+
+yldpred <- predict(prune.reg, test_df, type="vector")
+yldpred <- ifelse(yldpred > 0, test_df$Yield, 0)
+totalyld <- sum(yldpred)
+noquote(paste("The total crop Yield in hg/ha from all farmers with predicted Yield > 0 is", totalyld))
+
+
+min(df$Yield)
+max(df$Yield)
+
+Dataset <- c("Training", "Test", "Pruned Test")
+x1 <- trainRMSE
+x2 <- testRMSE
+x3 <- ptestRMSE
+RMSE <- c(x1,x2,x3)
+X_V <- data.frame(Dataset, RMSE)
+kable(X_V)
+
+```
+```{r}
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
